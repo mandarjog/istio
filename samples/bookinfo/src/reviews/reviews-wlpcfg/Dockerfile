@@ -23,8 +23,10 @@ RUN /opt/ibm/wlp/bin/installUtility install  --acceptLicense /opt/ibm/wlp/usr/se
 ARG service_version
 ARG enable_ratings
 ARG star_color
+ARG num_ratings_calls
 ENV SERVICE_VERSION ${service_version:-v1}
 ENV ENABLE_RATINGS ${enable_ratings:-false}
 ENV STAR_COLOR ${star_color:-black}
+ENV NUM_RATINGS_CALLS ${num_ratings_calls:-1}
 
 CMD /opt/ibm/wlp/bin/server run defaultServer

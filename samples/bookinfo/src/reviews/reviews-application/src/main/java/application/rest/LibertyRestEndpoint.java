@@ -43,6 +43,8 @@ public class LibertyRestEndpoint extends Application {
     private final static Boolean ratings_enabled = Boolean.valueOf(System.getenv("ENABLE_RATINGS"));
     private final static String star_color = System.getenv("STAR_COLOR") == null ? "black" : System.getenv("STAR_COLOR");
     private final static String ratings_service = "http://ratings:9080/ratings";
+    private final static int num_ratings_calls = Integer.parseInt(
+        System.getenv("NUM_RATINGS_CALLS") == null ? "1" : System.getenv("NUM_RATINGS_CALLS"));
     
     private String getJsonResponse (String productId, int starsReviewer1, int starsReviewer2) {
     	String result = "{";
@@ -141,19 +143,21 @@ public class LibertyRestEndpoint extends Application {
       int starsReviewer2 = -1;
 
       if (ratings_enabled) {
-        JsonObject ratingsResponse = getRatings(Integer.toString(productId), user, xreq, xtraceid, xspanid, xparentspanid, xsampled, xflags, xotspan);
-        if (ratingsResponse != null) {
-          if (ratingsResponse.containsKey("ratings")) {
-            JsonObject ratings = ratingsResponse.getJsonObject("ratings");
-            if (ratings.containsKey("Reviewer1")){
-          	  starsReviewer1 = ratings.getInt("Reviewer1");
-            }
-            if (ratings.containsKey("Reviewer2")){
-              starsReviewer2 = ratings.getInt("Reviewer2");
+        for (int k=0; k<num_ratings_calls; k++) {
+            JsonObject ratingsResponse = getRatings(Integer.toString(productId), user, xreq, xtraceid, xspanid, xparentspanid, xsampled, xflags, xotspan);
+            if (ratingsResponse != null) {
+              if (ratingsResponse.containsKey("ratings")) {
+                JsonObject ratings = ratingsResponse.getJsonObject("ratings");
+                if (ratings.containsKey("Reviewer1")){
+                  starsReviewer1 = ratings.getInt("Reviewer1");
+                }
+                if (ratings.containsKey("Reviewer2")){
+                  starsReviewer2 = ratings.getInt("Reviewer2");
+                }
+              }
             }
           }
-        }
-      } 
+      }
 
       String jsonResStr = getJsonResponse(Integer.toString(productId), starsReviewer1, starsReviewer2);
       return Response.ok().type(MediaType.APPLICATION_JSON).entity(jsonResStr).build();
