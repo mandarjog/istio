@@ -72,6 +72,7 @@ func serverCmd(info map[string]template.Info, adapters []adapter.InfoFn, printf,
 	if err := serverCmd.PersistentFlags().MarkHidden("configIdentityAttributeDomain"); err != nil {
 		fatalf("unable to hide: %v", err)
 	}
+	serverCmd.PersistentFlags().BoolVar(&sa.EnableProfiling, "profile", true, "Enable profiling via web interface host:port/debug/pprof")
 
 	// TODO: Remove all this stuff by the 0.5 release (don't forget all associated YAML templates and any other uses of these options in the code
 	// base & docs)
