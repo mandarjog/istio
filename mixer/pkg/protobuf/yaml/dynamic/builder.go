@@ -245,6 +245,7 @@ func (c Builder) buildPrimitiveField(v interface{}, fd *descriptor.FieldDescript
 		if noExpr || isConstString || !isString || c.compiler == nil {
 			enc, err = buildStaticEncoder(val, fd, enum)
 		} else {
+			fmt.Printf("%v %v c=%v\n", sval, fd, c.compiler)
 			enc, err = buildDynamicEncoder(sval, fd, enum, c.compiler)
 		}
 

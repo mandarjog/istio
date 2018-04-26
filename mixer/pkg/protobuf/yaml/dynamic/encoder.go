@@ -67,10 +67,10 @@ func extendSlice(ba []byte, n int) []byte {
 
 func (m messageEncoder) encodeWithoutLength(bag attribute.Bag, ba []byte) ([]byte, error) {
 	var err error
-	for _, f := range m.fields {
-		ba, err = f.Encode(bag, ba)
+	for i:=0; i<len(m.fields); i++{
+		ba, err = m.fields[i].Encode(bag, ba)
 		if err != nil {
-			return nil, fmt.Errorf("fieldEncoder: %s - %v", f.name, err)
+			return nil, fmt.Errorf("fieldEncoder: %s - %v", m.fields[i].name, err)
 		}
 	}
 	return ba, nil
@@ -118,7 +118,7 @@ func (m messageEncoder) Encode(bag attribute.Bag, ba []byte) ([]byte, error) {
 // expected length of the varint encoded word
 // 2 byte words represent 2 ** 14 = 16K bytes
 // If the repeated fieldEncoder length is more, it involves an array copy
-const defaultFieldLengthSize = 1
+const defaultFieldLengthSize = 2
 
 var fieldLengthSize = defaultFieldLengthSize
 
@@ -135,12 +135,35 @@ func (f fieldEncoder) Encode(bag attribute.Bag, ba []byte) ([]byte, error) {
 		startOfDataIdx = len(ba)
 	}
 
-	var err error
-	for _, en := range f.encoder {
-		ba, err = en.Encode(bag, ba)
+	fast := true
+
+	for i:=0; i<len(f.encoder); i++ {
+		var err error
+		if !fast{
+			ba, err = f.encoder[i].Encode(bag, ba)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		switch enc:=f.encoder[i].(type) {
+		case *staticEncoder:
+			ba = append(ba, enc.encodedData...)
+		case messageEncoder:
+			ba, err = enc.Encode(bag, ba)
+		case *eEnumEncoder:
+			ba, err = enc.Encode(bag, ba)
+		case *primEvalEncoder:
+			ba, err = enc.Encode(bag, ba)
+		default:
+			fmt.Printf("%T: %v, %v", enc, f, enc)
+			ba, err = enc.Encode(bag, ba)
+		}
+
 		if err != nil {
 			return nil, err
 		}
+
 	}
 
 	if f.packed {
