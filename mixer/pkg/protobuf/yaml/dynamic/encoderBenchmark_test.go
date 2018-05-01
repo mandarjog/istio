@@ -73,7 +73,32 @@ func BenchmarkGogo(b *testing.B) {
 	}
 }
 
-func BenchmarkDynamic(b *testing.B) {
+func BenchmarkDynamic_default(b *testing.B) {
+	inlineFieldEncode = false
+	noInterfaceFieldEncode = false
+	benchmarkDynamic(b)
+}
+
+func BenchmarkDynamic_inline(b *testing.B) {
+	inlineFieldEncode = true
+	noInterfaceFieldEncode = false
+	benchmarkDynamic(b)
+}
+
+func BenchmarkDynamic_noInterface(b *testing.B) {
+	inlineFieldEncode = false
+	noInterfaceFieldEncode = true
+	benchmarkDynamic(b)
+}
+
+func BenchmarkDynamic_inline_noInterface(b *testing.B) {
+	inlineFieldEncode = true
+	noInterfaceFieldEncode = true
+	benchmarkDynamic(b)
+}
+
+
+func benchmarkDynamic(b *testing.B) {
 	b.StopTimer()
 	enc, _, err := sbench()
 	if err != nil {

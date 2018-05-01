@@ -65,12 +65,78 @@ func extendSlice(ba []byte, n int) []byte {
 	return ba
 }
 
+var inlineFieldEncode = false
+
 func (m messageEncoder) encodeWithoutLength(bag attribute.Bag, ba []byte) ([]byte, error) {
 	var err error
-	for i:=0; i<len(m.fields); i++{
-		ba, err = m.fields[i].Encode(bag, ba)
+	for ii := 0; ii < len(m.fields); ii++ {
+		f := m.fields[ii]
+
+		if !inlineFieldEncode {
+			ba, err = f.Encode(bag, ba)
+			if err != nil {
+				return nil, fmt.Errorf("fieldEncoder: %s - %v", f.name, err)
+			}
+			continue
+		}
+
+		ba = append(ba, f.protoKey...)
+
+		var prefixIdx int
+		var startOfDataIdx int
+
+		if f.packed {
+			prefixIdx = len(ba)
+			// #pragma inline reserve fieldLengthSize bytes
+			ba = extendSlice(ba, fieldLengthSize)
+			startOfDataIdx = len(ba)
+		}
+
+		for i := 0; i < len(f.encoder); i++ {
+			var err error
+			if !noInterfaceFieldEncode {
+				ba, err = f.encoder[i].Encode(bag, ba)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+			switch enc := f.encoder[i].(type) {
+			case *staticEncoder:
+				ba = append(ba, enc.encodedData...)
+			case messageEncoder:
+				ba, err = enc.Encode(bag, ba)
+			case *eEnumEncoder:
+				ba, err = enc.Encode(bag, ba)
+			case *primEvalEncoder:
+				ba, err = enc.Encode(bag, ba)
+			default:
+				fmt.Printf("%T: %v, %v", enc, f, enc)
+				ba, err = enc.Encode(bag, ba)
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+		}
+
+		if f.packed {
+			length := len(ba) - startOfDataIdx
+			diff := proto.SizeVarint(uint64(length)) - fieldLengthSize
+			// move data forward because we need more than fieldLengthSize bytes
+			if diff > 0 {
+				ba = extendSlice(ba, diff)
+				// shift data down. This should rarely occur.
+				copy(ba[startOfDataIdx+diff:], ba[startOfDataIdx:])
+			}
+
+			// ignore return value. EncodeLength is writing in the middle of the array.
+			_ = EncodeVarintZeroExtend(ba[prefixIdx:prefixIdx], uint64(length), fieldLengthSize)
+		}
+
 		if err != nil {
-			return nil, fmt.Errorf("fieldEncoder: %s - %v", m.fields[i].name, err)
+			return nil, fmt.Errorf("fieldEncoder: %s - %v", f.name, err)
 		}
 	}
 	return ba, nil
@@ -122,6 +188,9 @@ const defaultFieldLengthSize = 2
 
 var fieldLengthSize = defaultFieldLengthSize
 
+var noInterfaceFieldEncode = false
+
+
 func (f fieldEncoder) Encode(bag attribute.Bag, ba []byte) ([]byte, error) {
 	ba = append(ba, f.protoKey...)
 
@@ -135,18 +204,17 @@ func (f fieldEncoder) Encode(bag attribute.Bag, ba []byte) ([]byte, error) {
 		startOfDataIdx = len(ba)
 	}
 
-	fast := true
 
-	for i:=0; i<len(f.encoder); i++ {
+	for i := 0; i < len(f.encoder); i++ {
 		var err error
-		if !fast{
+		if !noInterfaceFieldEncode {
 			ba, err = f.encoder[i].Encode(bag, ba)
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
-		switch enc:=f.encoder[i].(type) {
+		switch enc := f.encoder[i].(type) {
 		case *staticEncoder:
 			ba = append(ba, enc.encodedData...)
 		case messageEncoder:
