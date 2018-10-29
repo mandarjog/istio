@@ -60,6 +60,8 @@ type Server struct {
 	monitor   *monitor
 	tracer    io.Closer
 
+	GrpcServer mixerpb.MixerServer
+
 	checkCache *checkcache.Cache
 	dispatcher dispatcher.Dispatcher
 	controlZ   *ctrlz.Server
@@ -245,7 +247,9 @@ func newServer(a *Args, p *patchTable) (*Server, error) {
 	grpcOptions = append(grpcOptions, grpc.StatsHandler(&ocgrpc.ServerHandler{}))
 
 	s.server = grpc.NewServer(grpcOptions...)
-	mixerpb.RegisterMixerServer(s.server, api.NewGRPCServer(s.dispatcher, s.gp, s.checkCache))
+
+	s.GrpcServer = api.NewGRPCServer(s.dispatcher, s.gp, s.checkCache)
+	mixerpb.RegisterMixerServer(s.server, s.GrpcServer)
 
 	if a.LivenessProbeOptions.IsValid() {
 		s.livenessProbe = probe.NewFileController(a.LivenessProbeOptions)
