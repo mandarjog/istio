@@ -18,18 +18,19 @@ var (
 	srvLock = &sync.RWMutex{}
 )
 
-func init() {
-	go initServer()
-}
-
-func initServer() {
+//export InitModule
+func InitModule() {
 	var err error
 
 	srvLock.Lock()
+	defer srvLock.Unlock()
+	if srv != nil {
+		return
+	}
+
 	if srv, err = server.New(server.DefaultArgs()); err != nil {
 		log.Errorf("Unable to start server: %v", err)
 	}
-	srvLock.Unlock()
 }
 
 func getServer() *server.Server {

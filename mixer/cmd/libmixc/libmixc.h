@@ -65,6 +65,8 @@ extern "C" {
 #endif
 
 
+extern void InitModule();
+
 extern GoUint8 Report(GoString p0);
 
 #ifdef __cplusplus
