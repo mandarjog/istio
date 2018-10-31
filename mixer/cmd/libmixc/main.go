@@ -6,6 +6,7 @@ import "C"
 
 import (
 	"context"
+	"github.com/gogo/protobuf/proto"
 	mixerpb "istio.io/api/mixer/v1"
 	"istio.io/istio/mixer/pkg/attribute"
 	"istio.io/istio/mixer/pkg/server"
@@ -28,7 +29,11 @@ func InitModule() {
 		return
 	}
 
-	if srv, err = server.New(server.DefaultArgs()); err != nil {
+	args := server.DefaultArgs()
+	args.ConfigStoreURL = "fs:///Users/mjog/.kube/config"
+	args.APIWorkerPoolSize = 10
+	args.AdapterWorkerPoolSize = 10
+	if srv, err = server.New(args); err != nil {
 		log.Errorf("Unable to start server: %v", err)
 	}
 }
@@ -41,18 +46,25 @@ func getServer() *server.Server {
 	return s
 }
 
+//strcpy copy to gostring
+func strcpy(str string) string {
+	return string(([]byte(str))[0:])
+}
+
 //export Report
 func Report(attrString string) bool {
-	var attrs *mixerpb.Attributes
 
-	if err := attrs.Unmarshal([]byte(attrString)); err != nil {
+	log.Infof("Got: %d, %v", len(attrString), attrString)
+	var attrs mixerpb.Attributes
+
+	if err := proto.Unmarshal([]byte(attrString), &attrs); err != nil {
 		log.Errorf("Unable to unmarshal attributes: %v", err)
 		return false
 	}
 
 	var compressed *mixerpb.CompressedAttributes
 	var err error
-	if compressed, err = compressAttributes(attrs); err != nil {
+	if compressed, err = compressAttributes(&attrs); err != nil {
 		log.Errorf("Unable to compress attributes: %v", err)
 		return false
 	}
