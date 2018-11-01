@@ -84,10 +84,15 @@ docker.sidecar_injector: pilot/docker/Dockerfile.sidecar_injector
 docker.sidecar_injector:$(ISTIO_DOCKER)/sidecar-injector
 	$(DOCKER_RULE)
 
+
+mixer/cmd/libmixc/libmixc.so:
+	cd mixer/cmd/libmixc; go build -o libmixc.so -buildmode=c-shared main.go
+
 # BUILD_PRE tells $(DOCKER_RULE) to run the command specified before executing a docker build
 # BUILD_ARGS tells  $(DOCKER_RULE) to execute a docker build with the specified commands
 
-docker.proxy_debug: BUILD_PRE=mv envoy-debug-${PROXY_REPO_SHA} envoy &&
+docker.proxy_debug: BUILD_PRE=if [[ -z "${USE_LOCAL_PROXY}" ]]; then mv envoy-debug-${PROXY_REPO_SHA} envoy; fi &&
+docker.proxy_debug: mixer/cmd/libmixc/libmixc.so
 docker.proxy_debug: BUILD_ARGS=--build-arg proxy_version=istio-proxy:${PROXY_REPO_SHA} --build-arg istio_version=${VERSION}
 docker.proxy_debug: pilot/docker/Dockerfile.proxy_debug
 docker.proxy_debug: tools/deb/envoy_bootstrap_v2.json
@@ -211,7 +216,7 @@ docker.node-agent-test: $(ISTIO_DOCKER)/node_agent.key
 # 4. This rule runs $(BUILD_PRE) prior to any docker build and only if specified as a dependency variable
 # 5. This rule finally runs docker build passing $(BUILD_ARGS) to docker if they are specified as a dependency variable
 
-DOCKER_RULE=time (mkdir -p $(DOCKER_BUILD_TOP)/$@ && cp -r $^ $(DOCKER_BUILD_TOP)/$@ && cd $(DOCKER_BUILD_TOP)/$@ && $(BUILD_PRE) docker build $(BUILD_ARGS) -t $(HUB)/$(subst docker.,,$@):$(TAG) -f Dockerfile$(suffix $@) .)
+DOCKER_RULE=time (mkdir -p $(DOCKER_BUILD_TOP)/$@ && cp -f -r $^ $(DOCKER_BUILD_TOP)/$@ && cd $(DOCKER_BUILD_TOP)/$@ && $(BUILD_PRE) docker build $(BUILD_ARGS) -t $(HUB)/$(subst docker.,,$@):$(TAG) -f Dockerfile$(suffix $@) .)
 
 # This target will package all docker images used in test and release, without re-building
 # go binaries. It is intended for CI/CD systems where the build is done in separate job.

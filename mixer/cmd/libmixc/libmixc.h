@@ -10,7 +10,9 @@
 #ifndef GO_CGO_EXPORT_PROLOGUE_H
 #define GO_CGO_EXPORT_PROLOGUE_H
 
-typedef struct { const char *p; ptrdiff_t n; } _GoString_;
+typedef ptrdiff_t intgo;
+
+typedef struct { const char *p; intgo n; } _GoString_;
 
 #endif
 
