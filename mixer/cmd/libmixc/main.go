@@ -7,11 +7,17 @@ import "C"
 import (
 	"context"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	mixerpb "istio.io/api/mixer/v1"
+	"istio.io/istio/mixer/adapter"
 	"istio.io/istio/mixer/pkg/attribute"
 	"istio.io/istio/mixer/pkg/server"
+	"istio.io/istio/mixer/pkg/template"
 	"istio.io/istio/pkg/log"
+	"os"
 	"sync"
+	adptr "istio.io/istio/mixer/pkg/adapter"
+	generatedTmplRepo "istio.io/istio/mixer/template"
 )
 
 var (
@@ -30,13 +36,28 @@ func InitModule() {
 	}
 
 	args := server.DefaultArgs()
-	args.ConfigStoreURL = "fs:///Users/mjog/.kube/config"
+	//args.ConfigStoreURL = "k8s:///Users/mjog/.kube/config"
+	args.ConfigStoreURL = os.Getenv("CONFIG_STORE_URL")
+	args.UseAdapterCRDs = true
 	args.APIWorkerPoolSize = 10
 	args.AdapterWorkerPoolSize = 10
+	args.LoggingOptions = log.DefaultOptions()
+	args.LoggingOptions.SetOutputLevel("api", log.DebugLevel)
+	args.Templates = supportedTemplates()
+	args.Adapters = supportedAdapters()
 	if srv, err = server.New(args); err != nil {
 		log.Errorf("Unable to start server: %v", err)
 	}
 }
+
+func supportedTemplates() map[string]template.Info {
+	return generatedTmplRepo.SupportedTmplInfo
+}
+
+func supportedAdapters() []adptr.InfoFn {
+	return adapter.Inventory()
+}
+
 
 func getServer() *server.Server {
 	srvLock.RLock()
@@ -54,7 +75,7 @@ func strcpy(str string) string {
 //export Report
 func Report(attrString string) bool {
 
-	log.Infof("Got: %d, %v", len(attrString), attrString)
+//	log.Infof("Got: %d, %v", len(attrString), attrString)
 	var attrs mixerpb.Attributes
 
 	if err := proto.Unmarshal([]byte(attrString), &attrs); err != nil {
@@ -106,9 +127,17 @@ func compressAttributes(attr *mixerpb.Attributes) (*mixerpb.CompressedAttributes
 		case *mixerpb.Attributes_AttributeValue_BytesValue:
 			b.Set(k, v.BytesValue)
 		case *mixerpb.Attributes_AttributeValue_TimestampValue:
-			b.Set(k, v.TimestampValue)
+			tt, err := types.TimestampFromProto(v.TimestampValue)
+			if err != nil {
+				return nil, err
+			}
+			b.Set(k, tt)
 		case *mixerpb.Attributes_AttributeValue_DurationValue:
-			b.Set(k, v.DurationValue)
+			tt, err := types.DurationFromProto(v.DurationValue)
+			if err != nil {
+				return nil, err
+			}
+			b.Set(k, tt)
 		case *mixerpb.Attributes_AttributeValue_StringMapValue:
 			b.Set(k, v.StringMapValue.Entries)
 		}
