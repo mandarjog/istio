@@ -32,7 +32,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/gogo/protobuf/types"
-	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-multierror"
 	"k8s.io/api/batch/v2alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -536,6 +536,8 @@ func injectionData(sidecarTemplate, version string, deploymentMetadata *metav1.O
 	if err != nil {
 		return nil, "", fmt.Errorf("error encoded injection status: %v", err)
 	}
+
+	injectServiceAccountSecrets(spec, &sic)
 	return &sic, string(statusAnnotationValue), nil
 }
 
@@ -679,6 +681,9 @@ func intoObject(sidecarTemplate string, meshconfig *meshconfig.MeshConfig, in ru
 		return nil, err
 	}
 
+	log.Infof("podSpec: %v", *podSpec)
+	injectServiceAccountSecrets(podSpec, spec)
+
 	podSpec.InitContainers = append(podSpec.InitContainers, spec.InitContainers...)
 	podSpec.Containers = append(podSpec.Containers, spec.Containers...)
 	podSpec.Volumes = append(podSpec.Volumes, spec.Volumes...)
@@ -689,6 +694,19 @@ func intoObject(sidecarTemplate string, meshconfig *meshconfig.MeshConfig, in ru
 	metadata.Annotations[annotationStatus.name] = status
 
 	return out, nil
+}
+
+// /var/run/secrets/kubernetes.io/serviceaccount
+func injectServiceAccountSecrets(podSpec *corev1.PodSpec, sidecar *SidecarInjectionSpec) {
+	for _, c := range podSpec.Containers {
+		for _, v := range c.VolumeMounts {
+			log.Infof("volume: %v", v)
+			if v.MountPath == "/var/run/secrets/kubernetes.io/serviceaccount" {
+				sidecar.Containers[0].VolumeMounts = append(sidecar.Containers[0].VolumeMounts,v)
+				log.Infof("sidecar: %v", sidecar.Containers[0].VolumeMounts)
+			}
+		}
+	}
 }
 
 // GenerateTemplateFromParams generates a sidecar template from the legacy injection parameters

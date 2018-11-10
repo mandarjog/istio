@@ -112,7 +112,11 @@ func record(tags *tag.Map, ms interface{}) {
 		tm: tags,
 		ms: ms.([]stats.Measurement),
 	}
-	defaultWorker.c <- req
+	select {
+		case defaultWorker.c <- req:
+		default:
+
+	}
 }
 
 // SetReportingPeriod sets the interval between reporting aggregated views in
