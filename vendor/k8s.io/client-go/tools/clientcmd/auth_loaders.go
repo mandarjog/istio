@@ -23,8 +23,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	clientauth "k8s.io/client-go/tools/auth"
 )
 
@@ -89,13 +87,7 @@ func promptForString(field string, r io.Reader, show bool) (result string, err e
 	if show {
 		_, err = fmt.Fscan(r, &result)
 	} else {
-		var data []byte
-		if terminal.IsTerminal(int(os.Stdin.Fd())) {
-			data, err = terminal.ReadPassword(int(os.Stdin.Fd()))
-			result = string(data)
-		} else {
-			return "", fmt.Errorf("error reading input for %s", field)
-		}
+		return "", fmt.Errorf("error reading input for %s", field)
 	}
 	return result, err
 }

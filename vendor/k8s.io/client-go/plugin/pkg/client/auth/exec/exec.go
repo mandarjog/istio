@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"golang.org/x/crypto/ssh/terminal"
+	//"golang.org/x/crypto/ssh/terminal"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -124,7 +124,7 @@ func newAuthenticator(c *cache, config *api.ExecConfig) (*Authenticator, error) 
 
 		stdin:       os.Stdin,
 		stderr:      os.Stderr,
-		interactive: terminal.IsTerminal(int(os.Stdout.Fd())),
+		interactive: false, //terminal.IsTerminal(int(os.Stdout.Fd())),
 		now:         time.Now,
 		environ:     os.Environ,
 	}
