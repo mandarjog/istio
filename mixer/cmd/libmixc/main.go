@@ -1,8 +1,9 @@
 package main
 
+// GOOS=js GOARCH=wasm go build -o bb.wasm main.go
 // go build -o libmixc.so -buildmode=c-shared main.go
 
-import "C"
+//import "C"
 
 import (
 	"context"
@@ -10,14 +11,14 @@ import (
 	"github.com/gogo/protobuf/types"
 	mixerpb "istio.io/api/mixer/v1"
 	"istio.io/istio/mixer/adapter"
+	adptr "istio.io/istio/mixer/pkg/adapter"
 	"istio.io/istio/mixer/pkg/attribute"
 	"istio.io/istio/mixer/pkg/server"
 	"istio.io/istio/mixer/pkg/template"
+	generatedTmplRepo "istio.io/istio/mixer/template"
 	"istio.io/istio/pkg/log"
 	"os"
 	"sync"
-	adptr "istio.io/istio/mixer/pkg/adapter"
-	generatedTmplRepo "istio.io/istio/mixer/template"
 )
 
 var (
@@ -58,7 +59,6 @@ func supportedAdapters() []adptr.InfoFn {
 	return adapter.Inventory()
 }
 
-
 func getServer() *server.Server {
 	srvLock.RLock()
 	s := srv
@@ -75,7 +75,7 @@ func strcpy(str string) string {
 //export Report
 func Report(attrString string) bool {
 
-//	log.Infof("Got: %d, %v", len(attrString), attrString)
+	//	log.Infof("Got: %d, %v", len(attrString), attrString)
 	var attrs mixerpb.Attributes
 
 	if err := proto.Unmarshal([]byte(attrString), &attrs); err != nil {
@@ -148,4 +148,4 @@ func compressAttributes(attr *mixerpb.Attributes) (*mixerpb.CompressedAttributes
 }
 
 // empty main required by .so
-func main() {}
+func main() { InitModule() }
