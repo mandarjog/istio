@@ -3,7 +3,7 @@ package main
 // GOOS=js GOARCH=wasm go build -o bb.wasm main.go
 // go build -o libmixc.so -buildmode=c-shared main.go
 
-//import "C"
+import "C"
 
 import (
 	"context"
@@ -148,4 +148,4 @@ func compressAttributes(attr *mixerpb.Attributes) (*mixerpb.CompressedAttributes
 }
 
 // empty main required by .so
-func main() { InitModule() }
+func main() {}

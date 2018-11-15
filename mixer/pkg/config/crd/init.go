@@ -92,6 +92,7 @@ func NewStore(u *url.URL, gv *schema.GroupVersion, _ *creds.Options) (store.Back
 		for _, n := range strings.Split(namespaces, ",") {
 			s.ns[n] = true
 		}
+		log.Infof("Using ns: %v", namespaces)
 	}
 	return s, nil
 }
