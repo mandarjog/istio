@@ -17,7 +17,9 @@ package v2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"sort"
 	"sync"
@@ -159,6 +161,8 @@ var (
 		Name: "pilot_total_xds_internal_errors",
 		Help: "Total number of internal XDS errors in pilot (check logs).",
 	})
+
+	envIP = os.Getenv("INSTANCE_IP")
 )
 
 func init() {
@@ -256,7 +260,68 @@ type XdsConnection struct {
 
 	// pushMutex prevents 2 overlapping pushes for this connection.
 	pushMutex sync.Mutex
+
+	// If set, ADS connection will terminate after currently outstanding work is done.
+	// When a pilot instance is oversubscribed with excess number of connections
+	// Set this error on the connections that must be closed.
+	closeAfterSend error
 }
+
+// connectionMetric stores number of connection by instance.
+type connectionMetric struct {
+	count int // number of connections
+	instance string // instance id excludes port
+}
+
+
+type fetchMetrics func()[]connectionMetric
+
+// startRejection defines when this pilot instance starts sending clients elsewhere.
+// 1.0 means that the current instance has average number of connections
+// must be > 1.0. Pilot will send disconnects to oldest clients to get the load back to 1.0
+const startRejection = 1.2
+const metricsPollInterval = 30 * time.Second
+
+// connectionBalancer updates connection rejection threshold by querying prometheus
+// This function should be started in a goroutine
+func (s *DiscoveryServer) connectionBalancer(fetchMetrics fetchMetrics) {
+	// if connections are oversubscribed in two successive poll intervals
+	// we update the threshold
+	// when rejection threshold is reached we send disconnects to the excess
+
+	adsLog.Infof("envIP: '%s'   env: %v", envIP, os.Environ())
+	for {
+		cn := fetchMetrics()
+		if cn == nil {
+			time.Sleep(metricsPollInterval)
+			continue
+		}
+		total := 0
+		myTotal := 0
+		for _, cm := range cn {
+			total += cm.count
+			adsLog.Infof("promQuery: cm %v %T,  envIP %v %T", cm.instance, cm.instance, envIP, envIP)
+			if cm.instance == envIP {
+				myTotal = cm.count
+			}
+		}
+		avg := total / len(cn)
+		myload := float64(myTotal)/float64(avg)
+
+		adsLog.Infof("promQuery: avg:%d total:%d myTotal:%d myload:%f", avg, total, myTotal, myload)
+
+		if  myload > startRejection {
+			s.connectionRejectThreshold.Store(avg)
+			adsLog.Infof("%d/%d connections handled. Overage > %f. Starting rebalancing", myTotal, total, startRejection)
+		} else {
+			// 0 indicates do not reject.
+			s.connectionRejectThreshold.Store(0)
+		}
+
+		time.Sleep(metricsPollInterval)
+	}
+}
+
 
 // configDump converts the connection internal state into an Envoy Admin API config dump proto
 // It is used in debugging to create a consistent object for comparison between Envoy and Pilot outputs
@@ -370,7 +435,6 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 		peerAddr = peerInfo.Addr.String()
 	}
 	var discReq *xdsapi.DiscoveryRequest
-
 	t0 := time.Now()
 	// rate limit the herd, after restart all endpoints will reconnect to the
 	// poor new pilot and overwhelm it.
@@ -600,6 +664,11 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 			}
 
 		}
+		// check if this connection is scheduled for removal
+		if con.closeAfterSend != nil {
+			adsLog.Infof("Rebalance: disconnecting %s, %s", con.PeerAddr, con.ConID)
+			return con.closeAfterSend
+		}
 	}
 }
 
@@ -771,6 +840,39 @@ func (s *DiscoveryServer) AdsPushAll(version string, push *model.PushContext,
 	s.startPush(version, push, true, nil)
 }
 
+
+// markForDisconnects will mark oldest connections for disconnect if requested.
+func (s *DiscoveryServer) markForDisconnects (pending []*XdsConnection) {
+	// first check if rejection is required.
+	wantConnected := 0
+	if th := s.connectionRejectThreshold.Load(); th != nil {
+		wantConnected = th.(int)
+	}
+
+	if wantConnected == 0 {
+		return
+	}
+
+	ndisconnect := len(pending) - wantConnected
+
+	if ndisconnect < 1 {
+		return
+	}
+
+	conn := make([]*XdsConnection, len(pending))
+	// copying here so that we do not change the order of push
+	copy(conn, pending)
+
+	sort.Slice(conn, func(i, j int) bool {
+		return conn[i].Connect.Sub(conn[j].Connect) < 0
+	})
+
+	closeAfterSend := status.Error(codes.Unavailable, fmt.Sprintf("rebalancing load: got: %d, want: %d", len(pending), wantConnected))
+	for i:=0; i<ndisconnect; i++ {
+		conn[i].closeAfterSend = closeAfterSend
+	}
+}
+
 // Send a signal to all connections, with a push event.
 func (s *DiscoveryServer) startPush(version string, push *model.PushContext, full bool,
 	edsUpdates map[string]*EndpointShardsByService) {
@@ -790,11 +892,15 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 	// TODO: get service, serviceinstances, configs once, to avoid repeated redundant calls.
 	// TODO: indicate the specific events, to only push what changed.
 
+
+	s.markForDisconnects(pending)
+
 	pendingPush := int32(len(pending))
+
 
 	tstart := time.Now()
 	// Will keep trying to push to sidecars until another push starts.
-	wg := sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 	for {
 
 		if len(pending) == 0 {
@@ -831,7 +937,7 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 				pending:            &pendingPush,
 				version:            version,
 				edsUpdatedServices: edsOnly,
-			}:
+				}:
 				client.LastPush = time.Now()
 				client.LastPushFailure = timeZero
 			case <-client.doneChannel: // connection was closed
@@ -863,6 +969,59 @@ func (s *DiscoveryServer) startPush(version string, push *model.PushContext, ful
 	adsLog.Infof("PushAll done %s %v", version, time.Since(tstart))
 	return
 }
+
+func (s *DiscoveryServer) pushAsync(client *XdsConnection, push *model.PushContext, edsUpdates map[string]*EndpointShardsByService, pendingPush *int32, full bool, tstart time.Time, wg *sync.WaitGroup) {
+	defer func() {
+		<-s.concurrentPushLimit
+		wg.Done()
+	}()
+
+	edsOnly := edsUpdates
+	if full {
+		edsOnly = nil
+	}
+
+Retry:
+	currentVersion := versionInfo()
+	// Stop attempting to push
+	if version != currentVersion && full {
+		adsLog.Infof("PushAll abort %s, push with newer version %s in progress %v", version, currentVersion, time.Since(tstart))
+		return
+	}
+
+	select {
+	case client.pushChannel <- &XdsEvent{
+		push:               push,
+		pending:            pendingPush,
+		version:            version,
+		edsUpdatedServices: edsOnly,
+	}:
+		client.LastPush = time.Now()
+		client.LastPushFailure = timeZero
+	case <-client.doneChannel: // connection was closed
+		adsLog.Infof("Client closed connection %v", client.ConID)
+	case <-time.After(PushTimeout):
+		// This may happen to some clients if the other side is in a bad state and can't receive.
+		// The tests were catching this - one of the client was not reading.
+		pushTimeouts.Add(1)
+		if client.LastPushFailure.IsZero() {
+			client.LastPushFailure = time.Now()
+			adsLog.Warnf("Failed to push, client busy %s", client.ConID)
+			pushErrors.With(prometheus.Labels{"type": "retry"}).Add(1)
+		} else {
+			if time.Since(client.LastPushFailure) > 10*time.Second {
+				adsLog.Warnf("Repeated failure to push %s", client.ConID)
+				// unfortunately grpc go doesn't allow closing (unblocking) the stream.
+				pushErrors.With(prometheus.Labels{"type": "unrecoverable"}).Add(1)
+				pushTimeoutFailures.Add(1)
+				return
+			}
+		}
+
+		goto Retry
+	}
+}
+
 
 func (s *DiscoveryServer) addCon(conID string, con *XdsConnection) {
 	adsClientsMutex.Lock()

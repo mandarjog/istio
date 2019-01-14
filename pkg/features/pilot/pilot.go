@@ -73,6 +73,10 @@ var (
 	// 'admin' namespaces. Using services from any other namespaces will require the new NetworkScope
 	// config. In most cases 'istio-system' should be included. Comma separated (ns1,ns2,istio-system)
 	NetworkScopes = os.Getenv("DEFAULT_NAMESPACE_DEPENDENCIES")
+
+	// PrometheusServer denotes the http address of the istio prometheus server to fetch metrics.
+	// Metrics are used to distribute load across pilots. Metrics can also be used for load assignment.
+	PrometheusServer = os.Getenv("PILOT_PROMETHEUS_SERVER")
 )
 
 const (

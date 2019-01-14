@@ -15,7 +15,13 @@
 package v2
 
 import (
+	"context"
+	"fmt"
+	"github.com/prometheus/client_golang/api"
+	"github.com/prometheus/client_golang/api/prometheus/v1"
+	prommodel "github.com/prometheus/common/model"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,6 +147,10 @@ type DiscoveryServer struct {
 
 	// mutex used for config update scheduling (former cache update mutex)
 	updateMutex sync.RWMutex
+
+	// connectionRejectThreshold if set to non zero
+	// pilot should start terminating connections that are over subscribed.
+	connectionRejectThreshold atomic.Value // <int>
 }
 
 // updateReq includes info about the requested update.
@@ -236,6 +246,14 @@ func NewDiscoveryServer(env *model.Environment, generator core.ConfigGenerator, 
 
 	go out.periodicRefreshMetrics()
 
+	if pilot.PrometheusServer != "" {
+		if prom, err := NewProm(pilot.PrometheusServer); err == nil {
+			go out.connectionBalancer(prom.promQuery)
+		} else {
+			adsLog.Warnf("unable to start prom client: %v", err)
+		}
+	}
+
 	out.DebugConfigs = pilot.DebugConfigs
 
 	pushThrottle := intEnv(pilot.PushThrottle, 10)
@@ -246,6 +264,46 @@ func NewDiscoveryServer(env *model.Environment, generator core.ConfigGenerator, 
 	out.initRateLimiter = rate.NewLimiter(rate.Limit(pushThrottle*2), pushBurst*2)
 
 	return out
+}
+
+
+func NewProm(url string) (*prom,  error) {
+	client, err := api.NewClient(api.Config{Address: fmt.Sprintf("%s:%d", url, 9090)})
+	if err != nil {
+		return nil, err
+	}
+	return &prom{
+		api:v1.NewAPI(client),
+	}, nil
+}
+
+type prom struct {
+	api v1.API
+}
+
+func (p *prom) promQuery()  []connectionMetric{
+	val, err := p.api.Query(context.Background(), "pilot_xds", time.Now())
+
+	if err != nil {
+		adsLog.Warnf("promQuery: Could not contact prom server: %v %v", err, p.api)
+		return nil
+	}
+
+	if val.Type() != prommodel.ValVector {
+		adsLog.Warnf("promQuery: value not a model.Vector; was %s", val.Type().String())
+		return  nil
+	}
+
+	value := val.(prommodel.Vector)
+	ret := make([]connectionMetric, 0, len(value))
+	for _, sample := range value{ // example sample: pilot_xds{instance="10.16.29.73:9093",job="pilot"}
+		fullinst := sample.Metric["instance"]  // instance is
+		ip := strings.Split(string(fullinst), ":")[0]
+		ret = append(ret, connectionMetric{count: int(sample.Value), instance: ip})
+	}
+
+	adsLog.Infof("promQuery: %v", ret)
+	return ret
 }
 
 // Register adds the ADS and EDS handles to the grpc server

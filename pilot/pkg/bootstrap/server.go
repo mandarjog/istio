@@ -1036,6 +1036,30 @@ func (s *Server) initDiscoveryService(args *PilotArgs) error {
 	return nil
 }
 
+type ListenerWrapper struct {
+	listener net.Listener
+}
+
+func newWrapper(l net.Listener) *ListenerWrapper {
+	return &ListenerWrapper{
+		listener: l,
+	}
+}
+
+func (w *ListenerWrapper) Accept() (net.Conn, error) {
+	return nil, nil
+}
+
+func (w *ListenerWrapper) Close() error{
+	return w.listener.Close()
+}
+
+func (w *ListenerWrapper) Addr() net.Addr{
+	return w.listener.Addr()
+}
+
+
+
 func (s *Server) initConsulRegistry(serviceControllers *aggregate.Controller, args *PilotArgs) error {
 	log.Infof("Consul url: %v", args.Service.Consul.ServerURL)
 	conctl, conerr := consul.NewController(
