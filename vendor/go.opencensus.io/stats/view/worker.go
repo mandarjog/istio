@@ -107,7 +107,7 @@ func RetrieveData(viewName string) ([]*Row, error) {
 	return resp.rows, resp.err
 }
 
-var dropped = 0
+var dropped = 1
 
 func record(tags *tag.Map, ms interface{}) {
 	req := &recordReq{
