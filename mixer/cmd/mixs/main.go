@@ -15,7 +15,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 
 	"istio.io/istio/mixer/adapter"
 	"istio.io/istio/mixer/cmd/mixs/cmd"
@@ -33,9 +36,23 @@ func supportedAdapters() []adptr.InfoFn {
 	return adapter.Inventory()
 }
 
+func setMutexProfile() {
+	sgm := os.Getenv("GOMUTEXPROFILE")
+	if sgm == "" {
+		return
+	}
+
+	gm, err := strconv.ParseInt(sgm, 10, 32)
+	if err != nil {
+		return
+	}
+	fmt.Printf("GOMUTEXPROFILE = %v", gm)
+	runtime.SetBlockProfileRate(int(gm))
+}
+
 func main() {
 	rootCmd := cmd.GetRootCmd(os.Args[1:], supportedTemplates(), supportedAdapters(), shared.Printf, shared.Fatalf)
-
+	setMutexProfile()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(-1)
 	}

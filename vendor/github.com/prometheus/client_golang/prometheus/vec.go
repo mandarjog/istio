@@ -227,10 +227,19 @@ func (m *metricMap) Collect(ch chan<- Metric) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
+	dropped := 0
 	for _, metrics := range m.metrics {
 		for _, metric := range metrics {
-			ch <- metric.metric
+			select {
+			case ch <- metric.metric:
+			default:
+				dropped++
+			}
 		}
+	}
+
+	if dropped > 0 {
+		fmt.Printf("vec dropped: %v", dropped)
 	}
 }
 
@@ -336,6 +345,20 @@ func (m *metricMap) getOrCreateMetricWithLabels(
 		return metric
 	}
 
+	lvs := extractLabelValues(m.desc, labels, curry)
+	newMetric := m.newMetric(lvs...)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	if metric, ok = m.getMetricWithHashAndLabels(hash, labels, curry); ok {
+		return metric
+	}
+
+	m.metrics[hash] = append(m.metrics[hash], metricWithLabelValues{values: lvs, metric: newMetric})
+	return newMetric
+
+
+	/*
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	metric, ok = m.getMetricWithHashAndLabels(hash, labels, curry)
@@ -345,6 +368,7 @@ func (m *metricMap) getOrCreateMetricWithLabels(
 		m.metrics[hash] = append(m.metrics[hash], metricWithLabelValues{values: lvs, metric: metric})
 	}
 	return metric
+	*/
 }
 
 // getMetricWithHashAndLabelValues gets a metric while handling possible

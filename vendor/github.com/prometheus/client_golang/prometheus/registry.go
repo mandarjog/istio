@@ -35,7 +35,7 @@ import (
 
 const (
 	// Capacity for the channel to collect metrics and descriptors.
-	capMetricChan = 1000
+	capMetricChan = 1000000
 	capDescChan   = 10
 )
 

@@ -107,12 +107,23 @@ func RetrieveData(viewName string) ([]*Row, error) {
 	return resp.rows, resp.err
 }
 
+var dropped = 0
+
 func record(tags *tag.Map, ms interface{}) {
 	req := &recordReq{
 		tm: tags,
 		ms: ms.([]stats.Measurement),
 	}
-	defaultWorker.c <- req
+
+	select {
+	case defaultWorker.c <- req:
+	default:
+		dropped++
+	}
+
+	if dropped % 50000 == 0 {
+		fmt.Printf("worker dropped: %v", dropped)
+	}
 }
 
 // SetReportingPeriod sets the interval between reporting aggregated views in
@@ -135,7 +146,7 @@ func newWorker() *worker {
 		views:      make(map[string]*viewInternal),
 		startTimes: make(map[*viewInternal]time.Time),
 		timer:      time.NewTicker(defaultReportingDuration),
-		c:          make(chan command, 1024),
+		c:          make(chan command, 102400),
 		quit:       make(chan bool),
 		done:       make(chan bool),
 	}
