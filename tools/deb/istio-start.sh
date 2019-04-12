@@ -20,6 +20,8 @@
 
 set -e
 
+export ISTIO_META_ISTIO_PROXY_VERSION="1.0.7"
+
 # Load optional config variables
 ISTIO_SIDECAR_CONFIG=${ISTIO_SIDECAR_CONFIG:-/var/lib/istio/envoy/sidecar.env}
 if [[ -r ${ISTIO_SIDECAR_CONFIG} ]]; then
