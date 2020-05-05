@@ -71,6 +71,9 @@ func TestStatsFilter(t *testing.T) {
 				if _, err := client.Call(echo.CallOptions{
 					Target:   server,
 					PortName: "http",
+					Headers: map[string][]string{
+						":method": []string{"POST"},
+					},
 				}); err != nil {
 					return err
 				}

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -45,7 +46,18 @@ func (c *httpProtocol) setHost(r *http.Request, host string) {
 }
 
 func (c *httpProtocol) makeRequest(ctx context.Context, req *request) (string, error) {
-	httpReq, err := http.NewRequest("GET", req.URL, nil)
+
+	method := "GET"
+	if m, ok := req.Header[":method"]; ok {
+		method = m[0]
+		delete(req.Header, ":method")
+	}
+	var body io.Reader
+	if len(req.Message) > 0 {
+		body = strings.NewReader(req.Message)
+	}
+
+	httpReq, err := http.NewRequest(method, req.URL, body)
 	if err != nil {
 		return "", err
 	}
